@@ -19,3 +19,8 @@ class EntitiesViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return Entities.objects.all()
+
+    @action(detail=False, methods=['GET'])
+    def save_entity(self, request):
+        url = self.request.query_params.get("url")
+
