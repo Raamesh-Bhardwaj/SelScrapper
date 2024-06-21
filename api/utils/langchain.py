@@ -1,5 +1,5 @@
 from langchain.prompts import PromptTemplate
-
+from langchain_core.pydantic_v1 import BaseModel, Field
 
 # Prompt template for the first question
 template1 = """
@@ -40,5 +40,10 @@ def generate_answer1(question, context):
 def generate_answer2(answer1, question):
     formatted_prompt = prompt_template2.format(answer1=answer1, question2=question)
     return formatted_prompt
+
+
+class Artist(BaseModel):
+    name: str = Field(description="name of artist")
+    instrument: str = Field(description="name of instrument")
 
 
