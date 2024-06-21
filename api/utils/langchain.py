@@ -44,6 +44,30 @@ def generate_answer2(answer1, question):
 
 class Artist(BaseModel):
     name: str = Field(description="name of artist")
-    instrument: str = Field(description="name of instrument")
+    role: str = Field(description="name of instrument")
 
 
+class Program(BaseModel):
+    name: str = Field(description="name of program")
+    artist: str = Field(description="name of artist")
+
+
+class DateAndTime(BaseModel):
+    date: str = Field(description="date of performance")
+    time: str = Field(description="time of performance")
+
+
+template = """
+     You are a AI agent who answers questions based on text. There should be no verbal explanations and 
+     answers should be in one or two words. If you do not know the answer to the question, 
+     you should respond with "I don't know". If you know the answer to the question, then the output should 
+     in the following format.
+     The output should be in the following format:
+     {format_instructions}
+    
+     Based on the following text:
+     {text}
+    
+     Answer the following question:
+     {question1}
+"""

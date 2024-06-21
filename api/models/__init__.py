@@ -1,1 +1,1 @@
-from .Entities import EntitiesMaster
+from .Entities import EntitiesMaster, Artists, Programs
