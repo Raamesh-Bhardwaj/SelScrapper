@@ -4,8 +4,8 @@ from langchain.chains.llm import LLMChain
 from rest_framework.response import Response
 from typing_extensions import Union, List
 
-from api.models import Entities
-from api.serializers import EntitiesSerializer, ArtistSerializer
+from api.models import Entities, Artists, Programs, EntitiesMaster
+from api.serializers import EntitiesSerializer, ArtistSerializer, ProgramsSerializer
 from rest_framework import status, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
@@ -16,6 +16,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from django.core.validators import URLValidator
 from django.core.exceptions import ValidationError
+from rest_framework.serializers import ValidationError as DRFValidationError
 from langchain.prompts import PromptTemplate
 # from langchain.chains import SimpleChain
 from django.conf import settings
@@ -24,6 +25,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import JsonOutputParser
 
 from api.utils import Artist, Program, DateAndTime, template
+from django.forms.models import model_to_dict
 
 
 OPENAI_API_KEY = getattr(settings, 'OPENAI_API_KEY', '')
@@ -33,9 +35,10 @@ class EntitiesViewSet(viewsets.ModelViewSet):
     serializer_class = EntitiesSerializer
     permission_classes = [AllowAny]
     artists_serializer = ArtistSerializer
+    program_serializer = ProgramsSerializer
 
     def get_queryset(self):
-        return Entities.objects.all()
+        return EntitiesMaster.objects.all()
 
     @staticmethod
     def validate_url(url):
@@ -75,8 +78,8 @@ class EntitiesViewSet(viewsets.ModelViewSet):
                     "question1": "What are the names and corresponding instrument of the artists?"
                 }
             )
-        # self.save_artists(artist_json)
         artist_json = self.process_gpt_response(artist_json, params=["name", "role"])
+        self.save_artists(artist_json)
         return artist_json
 
     @staticmethod
@@ -96,18 +99,18 @@ class EntitiesViewSet(viewsets.ModelViewSet):
             return json_list
 
     def save_artists(self, artist_json):
-        if type(artist_json) == dict:
-            for artist, role in artist_json.items():
-                serializer = self.artists_serializer(data=artist)
+        serializer_data = []
+        for artist_dict in artist_json:
+            serializer = self.artists_serializer(data=artist_dict)
+            try:
                 serializer.is_valid(raise_exception=True)
                 serializer.save()
-        elif type(artist_json) == list:
-            for artist_dict in artist_json:
-                serializer = self.artists_serializer(data=artist_dict)
-                serializer.is_valid(raise_exception=True)
-                serializer.save()
-        return serializer.data
-
+                serializer_data.append(serializer.data)
+            except DRFValidationError:
+                qs = Artists.objects.filter(name=artist_dict.get('name'), role=artist_dict.get('role'))
+                serializer = self.artists_serializer(qs, many=True)
+                serializer_data.append(serializer.data[0])
+        return serializer_data
 
     def get_programs(self, text: str):
         parser = JsonOutputParser(pydantic_object=Program)
@@ -124,8 +127,28 @@ class EntitiesViewSet(viewsets.ModelViewSet):
                 "question1": "What are the names and corresponding artists of the program?"
             }
         )
-        programs_json = self.process_gpt_response(programs_json, params=["name", "artist"])
+        programs_json['artists'] = programs_json.pop('artist')
+        programs_json = self.process_gpt_response(programs_json, params=["name", "artists"])
+        programs_json = self.save_programs(programs_json)
         return programs_json
+
+    def save_programs(self, programs_json):
+        programs_data = []
+        for prg_dict in programs_json:
+            serializer = self.program_serializer(data=prg_dict)
+            try:
+                serializer.is_valid(raise_exception=True)
+                serializer.save()
+                json_dict = serializer.data
+                json_dict.pop('id')
+                programs_data.append(serializer.data)
+            except DRFValidationError:
+                qs = Programs.objects.filter(name=prg_dict.get('name'), artists=prg_dict.get('artists'))
+                serializer = self.program_serializer(qs, many=True)
+                json_dict = serializer.data[0]
+                json_dict.pop('id')
+                programs_data.append(json_dict)
+        return programs_data
 
     @staticmethod
     def get_auditorium(text: str):
@@ -182,8 +205,76 @@ class EntitiesViewSet(viewsets.ModelViewSet):
             programs_json = self.get_programs(text=raw_text)
             venue = self.get_auditorium(text=raw_text)
             date, time = self.get_date_and_time(text=raw_text)
+            self.save_entities(url, artists_json, programs_json, venue, date, time)
             return Response(data={'artists': artists_json, 'programs': programs_json, "venue": venue,
                                   "date": date, "time": time}, status=status.HTTP_200_OK)
         except ValidationError:
             return Response("Invalid URL", status=status.HTTP_400_BAD_REQUEST)
 
+    @staticmethod
+    def get_artists_ids(artists_json):
+        artists_ids = []
+        for artist in artists_json:
+            name = artist.get('name')
+            role = artist.get('role')
+            artists = Artists.objects.filter(name=name, role=role).first()
+            artists_ids.append(artists.id)
+        return artists_ids
+
+    @staticmethod
+    def get_programs_ids(programs_json):
+        programs_ids = []
+        for program in programs_json:
+            name = program.get('name')
+            artists = program.get('artists')
+            programs = Programs.objects.filter(name=name, artists=artists).first()
+            programs_ids.append(programs.id)
+        return programs_ids
+
+
+    def save_entities(self,url, artistes_json, programs_json, venue, date, time):
+        entities = EntitiesMaster.objects.filter(url=url)
+        artists_id = self.get_artists_ids(artistes_json)
+        programs_id = self.get_programs_ids(programs_json)
+        if entities.exists():
+            entities_qs = entities.first()
+            entities_serializer = self.get_serializer(data=entities_qs)
+            entities_serializer.artists.set(artists_id)
+            entities_serializer.programs.set(programs_id)
+        else:
+            serializer = self.serializer_class(data={"url": url, "auditorium": venue, "date": date, "time": time,
+                                                     "artists": artists_id, "programs": programs_id})
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+
+    @action(detail=False, methods=['GET'])
+    def get_entity(self, request):
+        url = self.request.query_params.get("url")
+        validator = URLValidator()
+        try:
+            validator(url)
+        except ValidationError:
+            return Response("Invalid URL", status=status.HTTP_400_BAD_REQUEST)
+        else:
+            entities = EntitiesMaster.objects.filter(url=url)
+            if entities.exists():
+                qs = model_to_dict(EntitiesMaster.objects.filter(url=url).first())
+                qs.pop('id')
+                qs = self.process_entity_serialization(qs)
+                return Response(qs, status=status.HTTP_200_OK)
+            else:
+                return Response("URL Not Found", status=status.HTTP_400_BAD_REQUEST)
+
+    @staticmethod
+    def process_entity_serialization(qs):
+        artists = qs.pop('artists')
+        artists_arr = []
+        for artist in artists:
+            artists_arr.append({"name": artist.name, "role": artist.role})
+        qs['artists'] = artists_arr
+        programs = qs.pop('programs')
+        programs_arr = []
+        for program in programs:
+            programs_arr.append({"name": program.name, "artists": program.artists})
+        qs['programs'] = programs_arr
+        return qs

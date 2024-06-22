@@ -1,1 +1,1 @@
-from .Entities import EntitiesSerializer, ArtistSerializer
+from .Entities import EntitiesSerializer, ArtistSerializer, ProgramsSerializer
