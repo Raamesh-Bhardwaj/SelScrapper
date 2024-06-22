@@ -129,7 +129,7 @@ class EntitiesViewSet(viewsets.ModelViewSet):
         )
         programs_json['artists'] = programs_json.pop('artist')
         programs_json = self.process_gpt_response(programs_json, params=["name", "artists"])
-        programs_json = self.save_programs(programs_json)
+        self.save_programs(programs_json)
         return programs_json
 
     def save_programs(self, programs_json):
@@ -205,9 +205,8 @@ class EntitiesViewSet(viewsets.ModelViewSet):
             programs_json = self.get_programs(text=raw_text)
             venue = self.get_auditorium(text=raw_text)
             date, time = self.get_date_and_time(text=raw_text)
-            self.save_entities(url, artists_json, programs_json, venue, date, time)
-            return Response(data={'artists': artists_json, 'programs': programs_json, "venue": venue,
-                                  "date": date, "time": time}, status=status.HTTP_200_OK)
+            entities = self.save_entities(url, artists_json, programs_json, venue, date, time)
+            return Response(data=entities, status=status.HTTP_200_OK)
         except ValidationError:
             return Response("Invalid URL", status=status.HTTP_400_BAD_REQUEST)
 
@@ -231,21 +230,23 @@ class EntitiesViewSet(viewsets.ModelViewSet):
             programs_ids.append(programs.id)
         return programs_ids
 
-
-    def save_entities(self,url, artistes_json, programs_json, venue, date, time):
+    def save_entities(self, url, artistes_json, programs_json, venue, date, time):
         entities = EntitiesMaster.objects.filter(url=url)
         artists_id = self.get_artists_ids(artistes_json)
         programs_id = self.get_programs_ids(programs_json)
         if entities.exists():
-            entities_qs = entities.first()
-            entities_serializer = self.get_serializer(data=entities_qs)
-            entities_serializer.artists.set(artists_id)
-            entities_serializer.programs.set(programs_id)
+            qs = model_to_dict(EntitiesMaster.objects.filter(url=url).first())
+            qs.pop('id')
+            qs = self.process_entity_serialization(qs)
         else:
-            serializer = self.serializer_class(data={"url": url, "auditorium": venue, "date": date, "time": time,
-                                                     "artists": artists_id, "programs": programs_id})
+            serializer = self.serializer_class(data={"url": url, "auditorium": venue, "date": date, "time": time})
             serializer.is_valid(raise_exception=True)
-            serializer.save()
+            ser = serializer.save()
+            ser.artists.set(artists_id)
+            ser.programs.set(programs_id)
+            qs = serializer.data
+            qs.pop('id')
+        return qs
 
     @action(detail=False, methods=['GET'])
     def get_entity(self, request):

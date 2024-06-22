@@ -38,9 +38,6 @@ class ProgramsSerializer(serializers.ModelSerializer):
 
 
 class EntitiesSerializer(serializers.ModelSerializer):
-    artists = ArtistSerializer(many=True)
-    programs = ProgramsSerializer(many=True)
-
     class Meta:
         model = EntitiesMaster
         fields = [
@@ -52,26 +49,8 @@ class EntitiesSerializer(serializers.ModelSerializer):
             "time",
             "auditorium",
         ]
-        # depth = 1
-    # def get_artists(self, obj):
-    #     artists_arr = []
-    #     artists_ids = obj.artists
-    #     print(artists_ids)
-    #     for artist in artists_ids:
-    #         artists_arr.append({"name": artist.name, "role": artist.role})
-    #     return artists_arr
-    #
-    # def get_programs(self, obj):
-    #     programs_arr = []
-    #     programs_ids = obj.programs
-    #     for programs in programs_ids:
-    #         programs_arr.append({"name": programs.name, "artists": programs.artists})
-    #     return programs_arr
-    def validate(self, attrs):
-        print(
+        depth = 1
 
-        )
-        return attrs
 
 
 

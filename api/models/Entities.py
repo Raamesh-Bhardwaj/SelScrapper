@@ -5,8 +5,8 @@ from api.utils import Artist, Program
 
 class EntitiesMaster(models.Model):
     url = models.URLField(blank=False, null=False, unique=True)
-    artists = models.ManyToManyField("Artists")
-    programs = models.ManyToManyField("Programs")
+    artists = models.ManyToManyField("Artists", blank=True)
+    programs = models.ManyToManyField("Programs", blank=True)
     date = models.CharField(max_length=100, blank=False, null=False, default=None)
     time = models.CharField(max_length=50, blank=True, null=True, default=None)
     auditorium = models.CharField(max_length=100)
